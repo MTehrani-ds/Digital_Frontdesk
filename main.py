@@ -255,13 +255,15 @@ def health() -> Dict[str, str]:
 @app.post("/webchat/message", response_model=OutgoingMessage)
 def webchat_message(payload: IncomingMessage) -> OutgoingMessage:
     old_state = get_state(payload)
+    old_step = old_state.step  # ✅ snapshot BEFORE mutation
+
     reply, new_state = next_reply(payload.practice_name, payload.user_message, old_state)
     save_state(payload.session_id, new_state)
 
     ticket_info: Optional[Dict[str, Any]] = None
 
-    # Create ticket ONLY on transition into HANDOFF (agentic action)
-    if old_state.step != Step.HANDOFF and new_state.step == Step.HANDOFF:
+    # ✅ use old_step instead of old_state.step
+    if old_step != Step.HANDOFF and new_state.step == Step.HANDOFF:
         summary = f"Callback requested. Latest user message: {payload.user_message[:140]}"
         ticket = create_ticket(payload.session_id, payload.practice_name, new_state, summary)
         ticket_info = {
@@ -280,6 +282,7 @@ def webchat_message(payload: IncomingMessage) -> OutgoingMessage:
         state=new_state,
         ticket=ticket_info,
     )
+
 
 
 @app.post("/admin/reset_session/{session_id}")
