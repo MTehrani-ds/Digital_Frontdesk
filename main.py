@@ -161,43 +161,73 @@ def limited_response_policy(practice_name: str) -> str:
 # ---------------------------
 
 def update_collected_from_text(state: SessionState, user_text: str) -> SessionState:
-    # harden against None
+    """
+    Demo-safe extraction (no AI):
+    - Supports: "My name is Alex", "I'm Alex", "I am Alex"
+    - Supports label style: "Name: Alex, Phone: +43..., Best time: tomorrow morning"
+    - Phone: extracts digits/+ (simple)
+    - Best time: extracts the part after "best time" or uses short phrase fallback
+    """
+    # Harden against None
     if state.collected is None:
         state.collected = Collected()
 
     text = user_text.strip()
-    t = text.lower()
+    tl = text.lower()
 
-    # Phone: naive parse
-    digits = "".join(ch for ch in text if ch.isdigit() or ch == "+")
-    if len(digits.replace("+", "")) >= 9 and not state.collected.phone:
-        state.collected.phone = digits
+    # -----------------------
+    # PHONE (simple)
+    # -----------------------
+    if not state.collected.phone:
+        # Try label-based first: "phone: +43..."
+        for key in ["phone:", "phone=", "phone-", "tel:", "tel=", "tel-", "mobile:", "mobile=", "mobile-"]:
+            pos = tl.find(key)
+            if pos != -1:
+                candidate = text[pos + len(key):].strip()
+                # cut at next field label or punctuation
+                lowcand = candidate.lower()
+                for stop in [" best time", " name", ",", ";", "."]:
+                    idx2 = lowcand.find(stop)
+                    if idx2 != -1:
+                        candidate = candidate[:idx2].strip()
+                        lowcand = candidate.lower()
+                digits = "".join(ch for ch in candidate if ch.isdigit() or ch == "+")
+                if len(digits.replace("+", "")) >= 9:
+                    state.collected.phone = digits
+                break
 
-    # Best time: naive phrases
-    # Best time: extract only the relevant part (not the full message)
+    # fallback: any phone-like digits in whole message
+    if not state.collected.phone:
+        digits = "".join(ch for ch in text if ch.isdigit() or ch == "+")
+        if len(digits.replace("+", "")) >= 9:
+            state.collected.phone = digits
+
+    # -----------------------
+    # BEST TIME (extract only relevant fragment)
+    # -----------------------
     if not state.collected.best_time:
-        tl = text.lower()
-
-        # If user explicitly says "best time ..."
         marker = "best time"
         if marker in tl:
-            # Take substring from "best time" onward
             start = tl.find(marker)
             best = text[start:].strip()
 
-            # Remove leading "best time" / separators
-            best = best.replace("Best time", "").replace("best time", "").lstrip(" :,-").strip()
+            # remove the marker and separators
+            best_low = best.lower()
+            if best_low.startswith("best time"):
+                best = best[len("best time"):].lstrip(" :,-=").strip()
 
-            # Cut at next sentence separator if present
-            for stop in [".", ";", "|"]:
-                if stop in best:
-                    best = best.split(stop, 1)[0].strip()
+            # cut at next field label or sentence stop
+            lowbest = best.lower()
+            for stop in [" phone", " name", ".", ";", "|"]:
+                idx2 = lowbest.find(stop)
+                if idx2 != -1:
+                    best = best[:idx2].strip()
+                    lowbest = best.lower()
 
             if best:
                 state.collected.best_time = best
-
         else:
-            # Fallback: short time phrases (tomorrow morning / today afternoon / etc.)
+            # fallback: common short phrases
             for phrase in [
                 "tomorrow morning", "tomorrow afternoon", "tomorrow evening",
                 "today morning", "today afternoon", "today evening",
@@ -207,8 +237,49 @@ def update_collected_from_text(state: SessionState, user_text: str) -> SessionSt
                     state.collected.best_time = phrase
                     break
 
+    # -----------------------
+    # NAME (robust)
+    # -----------------------
+    if not state.collected.name:
+        # 1) Label-based: "name: Alex"
+        # Also handles: "Name: Alex, Phone: ..."
+        for sep in [":", "=", "-"]:
+            key = "name" + sep
+            pos = tl.find(key)
+            if pos != -1:
+                candidate = text[pos + len(key):].strip()
+
+                lowcand = candidate.lower()
+                for stop in [" phone", " best time", ",", ";", "."]:
+                    idx2 = lowcand.find(stop)
+                    if idx2 != -1:
+                        candidate = candidate[:idx2].strip()
+                        lowcand = candidate.lower()
+
+                if len(candidate) >= 2:
+                    state.collected.name = candidate[:80]
+                break
+
+    if not state.collected.name:
+        # 2) Phrase-based: "my name is / i'm / i am"
+        for pat in ["my name is ", "i am ", "i'm "]:
+            idx = tl.find(pat)
+            if idx != -1:
+                name = text[idx + len(pat):].strip()
+
+                lowname = name.lower()
+                for stop in [" phone", " best time", ".", ",", ";", " and "]:
+                    idx2 = lowname.find(stop)
+                    if idx2 != -1:
+                        name = name[:idx2].strip()
+                        lowname = name.lower()
+
+                if len(name) >= 2:
+                    state.collected.name = name[:80]
+                break
 
     return state
+
 
 
 # ---------------------------
