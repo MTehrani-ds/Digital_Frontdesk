@@ -174,25 +174,39 @@ def update_collected_from_text(state: SessionState, user_text: str) -> SessionSt
         state.collected.phone = digits
 
     # Best time: naive phrases
-    if (
-        not state.collected.best_time
-        and any(x in t for x in ["morning", "afternoon", "evening", "today", "tomorrow", "anytime"])
-    ):
-        state.collected.best_time = text
+    # Best time: extract only the relevant part (not the full message)
+    if not state.collected.best_time:
+        tl = text.lower()
 
-    # Name: case-safe, no split indexing
-    if not state.collected.name:
-        patterns = ["my name is ", "i am ", "i'm "]
-        for pat in patterns:
-            idx = t.find(pat)
-            if idx != -1:
-                name = text[idx + len(pat):].strip()
-                for stop in [".", ",", ";", " and "]:
-                    if stop in name:
-                        name = name.split(stop, 1)[0].strip()
-                if len(name) >= 2:
-                    state.collected.name = name[:80]
-                break
+        # If user explicitly says "best time ..."
+        marker = "best time"
+        if marker in tl:
+            # Take substring from "best time" onward
+            start = tl.find(marker)
+            best = text[start:].strip()
+
+            # Remove leading "best time" / separators
+            best = best.replace("Best time", "").replace("best time", "").lstrip(" :,-").strip()
+
+            # Cut at next sentence separator if present
+            for stop in [".", ";", "|"]:
+                if stop in best:
+                    best = best.split(stop, 1)[0].strip()
+
+            if best:
+                state.collected.best_time = best
+
+        else:
+            # Fallback: short time phrases (tomorrow morning / today afternoon / etc.)
+            for phrase in [
+                "tomorrow morning", "tomorrow afternoon", "tomorrow evening",
+                "today morning", "today afternoon", "today evening",
+                "tomorrow", "today", "anytime"
+            ]:
+                if phrase in tl:
+                    state.collected.best_time = phrase
+                    break
+
 
     return state
 
