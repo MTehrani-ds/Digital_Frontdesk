@@ -196,6 +196,15 @@ def create_ticket(session_id: str, practice_name: str, state: SessionState, summ
     return ticket
 
 
+def match_faq_intent(text: str) -> Optional[dict]:
+    t = text.lower()
+    # simple keyword match; first hit wins
+    for item in FAQ:
+        if any(k in t for k in item["keywords"]):
+            return item
+    return None
+
+
 # ---------------------------
 # App + global error handler
 # ---------------------------
