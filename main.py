@@ -9,6 +9,106 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field, ConfigDict
 
+# ---------------------------
+# Clinic configuration (demo placeholders)
+# ---------------------------
+
+CLINIC = {
+    "name": "Example Dental Clinic",
+    "address": "Example Street 12, 1010 Vienna",
+    "phone": "+43 1 234 5678",
+    "emergency_note": (
+        "If you have severe swelling, fever, heavy bleeding, trouble swallowing/breathing, "
+        "or rapidly worsening pain, seek urgent care immediately."
+    ),
+    "hours": "Mon–Fri 08:00–18:00",
+    "parking": "Street parking nearby. Nearest garage: Example Garage (3 min walk).",
+    "public_transport": "U1/U3 to Stephansplatz, then 5 min walk (demo text).",
+    "cancellation_policy": "Please cancel or reschedule at least 24 hours in advance.",
+    "insurance": "We accept public insurance and private pay (demo).",
+    "services": [
+        "Check-ups & consultations",
+        "Professional cleaning",
+        "Fillings",
+        "Root canal treatment (by assessment)",
+        "Crowns/bridges",
+        "Implants (by assessment)",
+        "Kids dentistry",
+        "Emergency pain consultations",
+    ],
+    "what_to_bring": "E-card/insurance card, photo ID, medication list (if any), and prior dental records if available.",
+}
+
+
+# ---------------------------
+# FAQ router (starter set)
+# ---------------------------
+
+FAQ = [
+    {
+        "key": "hours",
+        "keywords": ["hours", "opening", "open", "close", "closing", "weekend", "saturday", "sunday", "today", "tomorrow"],
+        "answer": lambda: f"Our opening hours are: {CLINIC['hours']}.",
+    },
+    {
+        "key": "location_parking",
+        "keywords": ["address", "location", "where", "parking", "park", "garage", "public transport", "tram", "metro", "u-bahn", "bus"],
+        "answer": lambda: (
+            f"Address: {CLINIC['address']}.\n"
+            f"Parking: {CLINIC['parking']}\n"
+            f"Public transport: {CLINIC['public_transport']}"
+        ),
+    },
+    {
+        "key": "booking",
+        "keywords": ["appointment", "book", "booking", "schedule", "available", "availability"],
+        "answer": lambda: (
+            "I can help arrange an appointment request. "
+            "Please share your **name**, **phone number**, and the **best time window** to reach you."
+        ),
+        "forces_contact_flow": True,
+    },
+    {
+        "key": "reschedule_cancel",
+        "keywords": ["reschedule", "change appointment", "move appointment", "cancel", "cancellation"],
+        "answer": lambda: (
+            f"To cancel or reschedule, please share your **name**, **phone number**, and your preferred new time window.\n\n"
+            f"Policy: {CLINIC['cancellation_policy']}"
+        ),
+        "forces_contact_flow": True,
+    },
+    {
+        "key": "emergency",
+        "keywords": ["emergency", "urgent", "swelling", "bleeding", "fever", "can’t breathe", "can't breathe", "hard to swallow", "severe pain"],
+        "answer": lambda: (
+            f"{CLINIC['emergency_note']}\n\n"
+            f"If you want a same-day assessment, share your **name**, **phone number**, and **best time** to call."
+        ),
+        "forces_contact_flow": True,
+    },
+    {
+        "key": "services",
+        "keywords": ["services", "do you do", "offer", "cleaning", "filling", "implant", "braces", "root canal", "kids", "child"],
+        "answer": lambda: (
+            "We offer:\n- " + "\n- ".join(CLINIC["services"]) +
+            "\n\nIf you'd like, tell me what you need and I can arrange a callback."
+        ),
+    },
+    {
+        "key": "pricing_insurance",
+        "keywords": ["price", "pricing", "cost", "how much", "insurance", "kassa", "private", "payment"],
+        "answer": lambda: (
+            f"Pricing depends on the service and insurance coverage. {CLINIC['insurance']}\n"
+            "If you tell me which service you’re asking about (e.g., cleaning, filling, implant), "
+            "I can arrange a callback with an estimated range."
+        ),
+    },
+    {
+        "key": "what_to_bring",
+        "keywords": ["what to bring", "bring", "documents", "paperwork", "e-card", "id", "records", "first visit", "new patient"],
+        "answer": lambda: f"For your visit, please bring: {CLINIC['what_to_bring']}",
+    },
+]
 
 # ---------------------------
 # Models: Policy + State machine
