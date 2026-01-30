@@ -396,12 +396,72 @@ def update_collected_from_text(state: SessionState, user_text: str) -> SessionSt
 # ---------------------------
 
 def next_reply(practice_name: str, user_text: str, state: SessionState) -> tuple[str, SessionState]:
-    # Policy gate at any time
+    """
+    Policy-first routing:
+    1) Block medical/medication advice -> safe limited response + collect callback details
+    2) Answer safe front-desk FAQs (hours/location/services/etc.)
+       - some intents force contact flow (booking/cancel/emergency) to create a callback ticket
+    3) If in contact flow, extract name/phone/best time and transition to HANDOFF when complete
+    """
+
+    # 1) Policy gate at any time (no medical or medication advice)
     if is_medical_or_medication_question(user_text):
         state.step = Step.LIMITED_RESPONSE
         return limited_response_policy(practice_name), state
 
-    # Collect contact for callback
+    # 2) Front-desk FAQ router (safe topics only)
+    faq = match_faq_intent(user_text)
+    if faq:
+        answer = faq["answer"]()
+        forces_contact = bool(faq.get("forces_contact_flow"))
+
+        # If FAQ is booking/cancel/emergency: enter contact-collection flow
+        if forces_contact:
+            state.step = Step.COLLECT_CONTACT
+
+            # Try to extract contact info from the same message (e.g., "Name:..., Phone:...")
+            state = update_collected_from_text(state, user_text)
+
+            missing = []
+            if not state.collected.name:
+                missing.append("name")
+            if not state.collected.phone:
+                missing.append("phone number")
+            if not state.collected.best_time:
+                missing.append("best time to call")
+
+            if missing:
+                answer += "\n\nTo proceed, I still need your " + ", ".join(missing) + "."
+                return answer, state
+
+            # If we already have everything, hand off immediately
+            state.step = Step.HANDOFF
+            return (
+                f"{answer}\n\n"
+                f"Thanks, {state.collected.name}. I’ve captured your details.\n\n"
+                f"Phone: {state.collected.phone}\n"
+                f"Best time: {state.collected.best_time}\n\n"
+                f"Someone from {practice_name} will contact you shortly.",
+                state,
+            )
+
+        # If it's a simple FAQ and we are not collecting contact, just answer
+        if state.step != Step.COLLECT_CONTACT:
+            return answer, state
+
+        # If we are already collecting contact, answer FAQ AND remind missing fields
+        missing = []
+        if not state.collected.name:
+            missing.append("name")
+        if not state.collected.phone:
+            missing.append("phone number")
+        if not state.collected.best_time:
+            missing.append("best time to call")
+        if missing:
+            answer += "\n\nTo proceed, I still need your " + ", ".join(missing) + "."
+        return answer, state
+
+    # 3) Contact collection flow (if already active)
     if state.step in (Step.LIMITED_RESPONSE, Step.COLLECT_CONTACT):
         state = update_collected_from_text(state, user_text)
 
@@ -417,7 +477,7 @@ def next_reply(practice_name: str, user_text: str, state: SessionState) -> tuple
             state.step = Step.COLLECT_CONTACT
             return (
                 "To arrange a callback, I still need your " + ", ".join(missing)
-                + ". You can reply in one message like: “My name is …, phone …, best time …”.",
+                + ". You can reply in one message like: “Name: …, Phone: …, Best time: …”.",
                 state,
             )
 
@@ -430,12 +490,11 @@ def next_reply(practice_name: str, user_text: str, state: SessionState) -> tuple
             state,
         )
 
-    # Already handed off
+    # 4) Already handed off
     return (
         f"Thanks — your request is with the team at {practice_name}.",
         state,
     )
-
 
 # ---------------------------
 # Routes
